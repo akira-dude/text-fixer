@@ -156,3 +156,45 @@ def fix_layout(text: str) -> str:
     flush()
     out.extend(trailing_ws)
     return "".join(out)
+
+
+# --------------------------------------------------------- language detection
+
+# Average bigram score a text must reach to be called English / Russian. Calibrated on
+# samples: English -1.0..-1.6 vs German/Spanish -2.8..-3.2; Russian -1.0..-2.3 overlaps
+# with Bulgarian (-2.3..-2.7), so Russian also needs distinctive letters (or a very
+# Russian score) and no Ukrainian ones.
+_EN_MIN = -2.2
+_RU_STRONG = -1.6
+_RU_MIN = -2.2
+_RU_ONLY = set("ыэё")
+_UK_ONLY = set("іїєґ")
+
+
+def _avg_score(model: _BigramModel, words_: list[str]) -> float:
+    total, weight = 0.0, 0
+    for w in words_:
+        s, n = model.score(w)
+        total += s * n
+        weight += n
+    return total / weight if weight else -99.0
+
+
+def detect_language(text: str) -> str | None:
+    """'en', 'ru', 'mixed' (both scripts) or None when unsure. Used only as a hint for the LLM."""
+    tokens = [tok for tok in text.split() if not _PROTECTED.match(tok)]
+    letters = [c for c in "".join(tokens).lower() if c.isalpha()]
+    lat = [c for c in letters if c in EN_ALPHA]
+    cyr = [c for c in letters if "а" <= c <= "я" or c in "ёіїєґ"]
+    if len(lat) >= 3 and len(cyr) >= 3 and min(len(lat), len(cyr)) / len(letters) >= 0.25:
+        return "mixed"
+    words_ = re.findall(r"[^\W\d_]+", " ".join(tokens).lower())
+    if lat and len(lat) / len(letters) >= 0.8:
+        return "en" if _avg_score(_EN, words_) >= _EN_MIN else None
+    if cyr and len(cyr) / len(letters) >= 0.8:
+        if _UK_ONLY & set(cyr):
+            return None
+        score = _avg_score(_RU, words_)
+        if score >= _RU_STRONG or (_RU_ONLY & set(cyr) and score >= _RU_MIN):
+            return "ru"
+    return None

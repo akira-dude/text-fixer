@@ -22,6 +22,8 @@ class Style:
     prompt: str
     rewrite: bool = False
     strip_final_period: bool = False
+    # Built-in and unedited: text comes from _DEFAULT_STYLES in the UI language.
+    builtin: bool = False
 
 
 _DEFAULT_STYLES = {
@@ -60,7 +62,26 @@ _DEFAULT_STYLES = {
 
 def default_styles(language: str = "en") -> dict[str, Style]:
     """Fresh copies of the built-in styles, in the UI language if available."""
-    return {k: replace(s) for k, s in _DEFAULT_STYLES.get(language, _DEFAULT_STYLES["en"]).items()}
+    return {k: replace(s, builtin=True) for k, s in _DEFAULT_STYLES.get(language, _DEFAULT_STYLES["en"]).items()}
+
+
+def builtin_style(key: str, language: str) -> Style | None:
+    return default_styles(language).get(key)
+
+
+def localize_builtin(styles: dict[str, Style], language: str) -> dict[str, Style]:
+    """Re-render unedited built-in styles in `language`; edited styles stay as they are."""
+    return {k: (builtin_style(k, language) or s) if s.builtin else s for k, s in styles.items()}
+
+
+def _matches_builtin(style: Style) -> bool:
+    """True if the style equals a built-in one in any language (pre-0.5 configs stored full text)."""
+    for lang in _DEFAULT_STYLES:
+        b = builtin_style(style.key, lang)
+        if b and (b.name, b.prompt, b.rewrite, b.strip_final_period) == (
+                style.name, style.prompt, style.rewrite, style.strip_final_period):
+            return True
+    return False
 
 
 @dataclass
@@ -112,13 +133,18 @@ def load() -> Config:
         raw = tomllib.load(f)
     api, hk, ae, tm = (raw.get(k, {}) for k in ("api", "hotkeys", "auto_enter", "timing"))
     d = Config()
-    styles = {
-        key: Style(key, s.get("name", key), s.get("prompt", "").strip(),
-                   bool(s.get("rewrite", False)), bool(s.get("strip_final_period", False)))
-        for key, s in raw.get("styles", {}).items()
-    } or d.styles
+    language = raw.get("ui", {}).get("language", d.language)
+    styles = {}
+    for key, s in raw.get("styles", {}).items():
+        st = Style(key, s.get("name", key), s.get("prompt", "").strip(),
+                   bool(s.get("rewrite", False)), bool(s.get("strip_final_period", False)),
+                   builtin=bool(s.get("builtin", False)))
+        if st.builtin or _matches_builtin(st):
+            st = builtin_style(key, language) or replace(st, builtin=False)
+        styles[key] = st
+    styles = styles or default_styles(language)
     return Config(
-        language=raw.get("ui", {}).get("language", d.language),
+        language=language,
         styles=styles,
         active_style=raw.get("style", {}).get("active", next(iter(styles))),
         base_url=api.get("base_url", d.base_url).rstrip("/"),
@@ -160,7 +186,8 @@ def save(cfg: Config) -> None:
         "updates": {"check": cfg.check_updates},
         "style": {"active": cfg.active_style},
         "styles": {
-            k: {"name": s.name, "rewrite": s.rewrite, "strip_final_period": s.strip_final_period, "prompt": s.prompt}
+            k: {"builtin": True} if s.builtin else
+            {"name": s.name, "rewrite": s.rewrite, "strip_final_period": s.strip_final_period, "prompt": s.prompt}
             for k, s in cfg.styles.items()
         },
     }

@@ -44,7 +44,9 @@ Pick the correction style in the tray (**Style** submenu). Built in:
 - **My style** — spelling, commas and capitals only; wording and slang stay, no period at the end.
 - **Business** — rewrites the message in a polite business tone.
 
-Edit styles or add your own in Settings → **Styles**. Fixed rules (never translate, never answer the message, keep links/mentions/emojis) are always added; see `textfixer/llm.py`.
+Built-in styles follow the interface language until you edit them; **Reset to default** brings the built-in text back. The result is always in the language of your message (Russian, English or mixed), whatever language the style instruction is written in — the app detects the message language and tells the model explicitly.
+
+Edit styles or add your own in Settings → **Styles**. Settings → **How it works** explains all of this inside the app. Fixed rules (never translate, never answer the message, keep links/mentions/emojis) are always added; see `textfixer/llm.py`.
 
 Tray icon: blue — idle, yellow — waiting for the model, red — error (details in the notification and the log).
 

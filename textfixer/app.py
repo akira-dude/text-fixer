@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import winreg
+from dataclasses import replace
 
 import pystray
 from PIL import Image, ImageDraw, ImageFont
@@ -69,6 +70,8 @@ class App:
 
     def apply_config(self, cfg: config_mod.Config) -> str | None:
         """Apply and persist settings from the settings window. Returns an error message."""
+        # Built-in styles follow the (possibly new) UI language.
+        cfg = replace(cfg, styles=config_mod.localize_builtin(cfg.styles, cfg.language))
         try:
             self._apply_hotkeys(cfg)
             config_mod.save(cfg)
@@ -94,7 +97,7 @@ class App:
         finally:
             corrector.close()
 
-    def open_settings(self) -> None:
+    def open_settings(self, tab: str | None = None) -> None:
         if self.settings:
             self.settings.raise_request.set()
             return
@@ -102,7 +105,7 @@ class App:
         def closed():
             self.settings = None
 
-        self.settings = SettingsWindow(self.cfg, self.apply_config, self.test_connection, closed)
+        self.settings = SettingsWindow(self.cfg, self.apply_config, self.test_connection, closed, tab)
         threading.Thread(target=self.settings.run, name="settings", daemon=True).start()
 
     # -------------------------------------------------------------- hook
@@ -417,7 +420,7 @@ def main() -> None:
         config_mod.ensure_config()
         app = App()
         if not app.cfg.api_key:
-            threading.Timer(1.0, app.open_settings).start()
+            threading.Timer(1.0, app.open_settings, args=("help",)).start()
             threading.Timer(1.5, app.notify, args=(t("notify.ask_api_key"),)).start()
         app.run()
     except Exception:

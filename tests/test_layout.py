@@ -1,4 +1,4 @@
-from textfixer.layout import fix_layout
+from textfixer.layout import detect_language, fix_layout
 
 CASES = [
     ("ghbdtn rfr ltkf", "привет как дела"),
@@ -30,6 +30,22 @@ CASES = [
     ("  ghbdtn\n", "  привет\n"),
 ]
 
+# detect_language must never claim a wrong language; None (unsure) is acceptable.
+DETECT_CASES = [
+    ("ok i will check it tomorow, thx", "en"),
+    ("hello how are you doing today", "en"),
+    ("привет как дела я тут", "ru"),
+    ("это всё ещё не работает", "ru"),
+    ("hey привет как дела bro what is up", "mixed"),
+    ("ich habe heute keine zeit, vielleicht morgen", None),
+    ("hola como estas, nos vemos manana", None),
+    ("здравей, как си? ще се видим утре", None),
+    ("можеш ли да ми изпратиш файла моля", None),
+    ("привіт, як справи? побачимося завтра", None),
+    ("gg wp", None),
+]
+
+
 def main():
     fails = 0
     for src, want in CASES:
@@ -37,8 +53,15 @@ def main():
         ok = got == want
         fails += not ok
         print(("OK  " if ok else "FAIL"), repr(src), "->", repr(got), "" if ok else f"(want {want!r})")
-    print(f"{len(CASES) - fails}/{len(CASES)} passed")
+    for src, want in DETECT_CASES:
+        got = detect_language(src)
+        ok = got == want
+        fails += not ok
+        print(("OK  " if ok else "FAIL"), "lang", repr(src), "->", got, "" if ok else f"(want {want!r})")
+    total = len(CASES) + len(DETECT_CASES)
+    print(f"{total - fails}/{total} passed")
     return fails
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

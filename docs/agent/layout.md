@@ -15,6 +15,16 @@
 Why: instant, offline, good enough for whole messages typed in the wrong layout
 (the real use case). Single rare words may stay unconverted — acceptable.
 
+## Language detection (`detect_language`)
+
+Used only to add an explicit language line to the LLM prompt. Returns `en`, `ru`,
+`mixed` (≥25 % of letters in each script) or `None`. It must never claim a wrong
+language — a wrong "Russian" hint could make the model russify Bulgarian/Ukrainian text —
+so it is deliberately conservative: English needs an average EN bigram score ≥ −2.2
+(German/Spanish score ≈ −3); Russian needs a very Russian score or ы/э/ё, and no
+Ukrainian letters. `None` falls back to "same language as the message".
+Cases live in `DETECT_CASES` in `tests/test_layout.py`.
+
 Changing word lists or the threshold: run `python -m tests.test_layout` and keep all
 cases passing; add a case for every bug you fix. Things that must stay untouched:
 `ok`, `lol`, `xD`, `gg wp`, `npm install`, git commands, links.

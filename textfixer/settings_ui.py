@@ -8,6 +8,7 @@ from dataclasses import replace
 from tkinter import messagebox, ttk
 from typing import Callable
 
+from . import config as config_mod
 from . import i18n
 from . import winapi as w
 from .config import Config, Style
@@ -23,11 +24,13 @@ _MODIFIER_KEYSYMS = {"Control_L", "Control_R", "Shift_L", "Shift_R", "Alt_L", "A
 
 class SettingsWindow:
     def __init__(self, cfg: Config, on_save: Callable[[Config], str | None],
-                 on_test: Callable[[Config], str], on_close: Callable[[], None]):
+                 on_test: Callable[[Config], str], on_close: Callable[[], None],
+                 initial_tab: str | None = None):
         self.cfg = replace(cfg, styles={k: replace(s) for k, s in cfg.styles.items()})
         self.on_save = on_save
         self.on_test = on_test
         self.on_close = on_close
+        self.initial_tab = initial_tab
         self.raise_request = threading.Event()
         self._results: queue.Queue = queue.Queue()
 
@@ -143,6 +146,8 @@ class SettingsWindow:
         btns.pack(fill="x", pady=(6, 0))
         ttk.Button(btns, text=t("settings.style.add"), command=self._add_style).pack(side="left", expand=True, fill="x")
         ttk.Button(btns, text=t("settings.style.delete"), command=self._del_style).pack(side="left", expand=True, fill="x", padx=(4, 0))
+        self.b_reset = ttk.Button(left, text=t("settings.style.reset"), command=self._reset_style)
+        self.b_reset.pack(fill="x", pady=(4, 0))
 
         right = ttk.Frame(f)
         right.grid(row=0, column=1, sticky="nsew")
@@ -160,6 +165,9 @@ class SettingsWindow:
         self.t_prompt = self._text(right, 10, "")
         self.t_prompt.grid(row=3, column=1, rowspan=2, sticky="nsew")
         ttk.Label(right, foreground="#666", wraplength=420, justify="left", text=t("settings.style.hint")).grid(row=5, column=1, sticky="w", pady=(6, 0))
+        self.v_sorigin = tk.StringVar()
+        ttk.Label(right, textvariable=self.v_sorigin, wraplength=420, justify="left").grid(
+            row=6, column=1, sticky="w", pady=(4, 0))
 
         self._style_keys: list[str] = []
         self._cur_style: str | None = None
@@ -202,10 +210,11 @@ class SettingsWindow:
     def _store_style(self) -> None:
         if self._cur_style and self._cur_style in self.cfg.styles:
             s = self.cfg.styles[self._cur_style]
-            s.name = self.v_sname.get().strip() or s.key
-            s.rewrite = self.v_rewrite.get()
-            s.strip_final_period = self.v_strip.get()
-            s.prompt = self.t_prompt.get("1.0", "end").strip()
+            new = (self.v_sname.get().strip() or s.key, self.v_rewrite.get(), self.v_strip.get(),
+                   self.t_prompt.get("1.0", "end").strip())
+            if new != (s.name, s.rewrite, s.strip_final_period, s.prompt):
+                s.name, s.rewrite, s.strip_final_period, s.prompt = new
+                s.builtin = False  # edited: from now on it's the user's own text
 
     def _select_style(self) -> None:
         sel = self.lb_styles.curselection()
@@ -220,6 +229,44 @@ class SettingsWindow:
         self.v_strip.set(s.strip_final_period)
         self.t_prompt.delete("1.0", "end")
         self.t_prompt.insert("1.0", s.prompt)
+        self.v_sorigin.set(t("settings.style.builtin") if s.builtin else t("settings.style.custom"))
+        can_reset = not s.builtin and config_mod.builtin_style(key, self.cfg.language) is not None
+        self.b_reset.state(["!disabled" if can_reset else "disabled"])
+
+    def _reset_style(self) -> None:
+        key = self._cur_style
+        builtin = key and config_mod.builtin_style(key, self.cfg.language)
+        if builtin:
+            self.cfg.styles[key] = builtin
+            self._cur_style = None
+            self._refresh_styles(key)
+
+    def _build_help(self) -> None:
+        f = self._tab(t("settings.tab.help"))
+        f.rowconfigure(0, weight=1)
+        text = t("settings.help.text", fix=self.cfg.hotkey_fix or "—",
+                 send=self.cfg.hotkey_fix_and_send or "—", layout=self.cfg.hotkey_layout or "—")
+        box = tk.Text(f, wrap="word", font=("Segoe UI", 10), relief="flat", padx=6, pady=4,
+                      background=self.root.cget("background"))
+        box.tag_configure("h", font=("Segoe UI Semibold", 11), spacing1=6, spacing3=2)
+        paragraphs = text.split("\n\n")
+        for i, para in enumerate(paragraphs):
+            head, _, body = para.partition("\n")
+            if body:
+                box.insert("end", head + "\n", "h")
+                box.insert("end", body)
+            else:
+                box.insert("end", head)
+            if i < len(paragraphs) - 1:
+                box.insert("end", "\n\n")
+        box.config(state="disabled")
+        f.columnconfigure(0, weight=1)
+        f.columnconfigure(1, weight=0)
+        scroll = ttk.Scrollbar(f, orient="vertical", command=box.yview)
+        box.config(yscrollcommand=scroll.set)
+        box.grid(row=0, column=0, sticky="nsew")
+        scroll.grid(row=0, column=1, sticky="ns")
+        self.help_tab = f
 
     def _add_style(self) -> None:
         self._store_style()
@@ -385,6 +432,9 @@ class SettingsWindow:
             self._build_enter()
             self._build_styles()
             self._build_timing()
+            self._build_help()
+            if self.initial_tab == "help":
+                self.nb.select(self.help_tab)
             bar = ttk.Frame(outer)
             bar.pack(fill="x", pady=(10, 0))
             ttk.Label(bar, text=t("settings.language")).pack(side="left")

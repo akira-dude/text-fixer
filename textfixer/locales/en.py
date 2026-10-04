@@ -112,8 +112,36 @@ STRINGS = {
     "settings.style.rewrite": "Rewrite the text (allow changing the length)",
     "settings.style.strip": "Remove the period at the end of the message",
     "settings.style.prompt": "Instruction",
-    "settings.style.hint": "Fixed rules are always added: never translate, never answer the message, "
+    "settings.style.hint": "The instruction can be in any language — the result is always in the language of "
+                           "your message. Fixed rules are always added: never translate, never answer the message, "
                            "keep links, @mentions, emojis and line breaks.",
+    "settings.style.reset": "Reset to default",
+    "settings.style.builtin": "Built-in style: follows the interface language until you edit it.",
+    "settings.style.custom": "Your style: kept exactly as written.",
+
+    "settings.tab.help": "How it works",
+    "settings.help.text": (
+        "Wrong keyboard layout\n"
+        "Typed “ghbdtn” instead of “привет”, or “руддщ” instead of “hello”? The layout is fixed locally on your "
+        "computer — instantly, offline, in both directions (English ↔ Russian). Links, @mentions and short words "
+        "like “ok” or “lol” are left alone.\n\n"
+        "Spelling and style — {fix}\n"
+        "The text of the current field is sent to the AI model (your provider, Groq by default), corrected in the "
+        "style selected in the tray and pasted back. The result is always in the language of your message: Russian "
+        "stays Russian, English stays English, mixed text stays mixed. The language of the style instruction "
+        "does not matter.\n"
+        "{send} does the same and sends the message. {layout} fixes only the layout, without AI.\n\n"
+        "Enter in chat apps\n"
+        "In the apps listed on the Enter tab, Enter first fixes the layout (no AI, practically no delay) and then "
+        "sends. Shift+Enter still makes a new line.\n\n"
+        "Styles\n"
+        "Built-in styles follow the interface language until you edit them. An edited style becomes yours; "
+        "“Reset to default” brings the built-in text back.\n\n"
+        "Privacy\n"
+        "Only the text of the field you fix is sent to the model provider. The log keeps timings and lengths, never "
+        "the text. Settings and the API key stay on this computer in %LOCALAPPDATA%\\TextFixer.\n\n"
+        "Getting started: paste your API key on the Connection tab and press “Test connection”."
+    ),
     "settings.style.new_name": "New style {n}",
     "settings.style.new_prompt": "Fix spelling and punctuation.",
     "settings.style.keep_one": "At least one style must remain.",

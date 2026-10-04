@@ -32,6 +32,17 @@ defaults for anything missing, `save()` writes the same structure:
 
 `TEXTFIXER_API_KEY` env var overrides `api.api_key` on load.
 
+## Built-in vs custom styles
+
+- `[styles.<id>] builtin = true` (nothing else stored) = an unedited built-in style.
+  `load()` renders it from `config._DEFAULT_STYLES[ui.language]`; `localize_builtin()`
+  re-renders after a language change (`App.apply_config`).
+- Any edit in the settings window (`_store_style`) flips `builtin` to False; from then
+  on name/prompt/flags are stored verbatim and never translated.
+- "Reset to default" replaces a style with `builtin_style(key, language)`.
+- Migration: pre-0.5 configs stored full text; a style equal to a built-in in *any*
+  language (`_matches_builtin`) is converted to `builtin = true` on load.
+
 ## Settings window
 
 `settings_ui.SettingsWindow` edits a deep copy of the config and calls back into
