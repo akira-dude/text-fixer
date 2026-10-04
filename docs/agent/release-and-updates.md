@@ -38,7 +38,8 @@ If a release is broken, ship a new patch version.
 - `download()` streams the zip to `update\`, verifies SHA-256 (asset `digest` from the
   API, fallback `.sha256` asset), rejects path traversal, unpacks to `app.new\`,
   requires `TextFixer.exe`.
-- `launch_apply()` writes `update\apply.ps1` and starts it detached; the app quits.
+- `launch_apply()` writes `update\apply.ps1` and starts it with a hidden console
+  (`CREATE_NO_WINDOW`, never `DETACHED_PROCESS` — see pitfalls); the app quits.
   The script waits for the old PID, renames `app` → `app.old`, `app.new` → `app`,
   starts the exe with `--updated`, then waits up to 20 s for `update\started.ok`
   (written by `updater.mark_started()` ~3 s after the new version is up).
