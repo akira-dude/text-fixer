@@ -1,0 +1,66 @@
+# Push a tag vX.Y.Z (must equal textfixer.__version__) -> build TextFixer.exe on
+# Windows and publish TextFixer-vX.Y.Z.zip (+ .sha256) as a GitHub Release.
+# The app's updater (textfixer/updater.py) downloads exactly these assets.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  PYTHONIOENCODING: utf-8
+  PYTHONUTF8: "1"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -r requirements-build.txt
+
+      - name: Check tag matches version
+        shell: pwsh
+        run: |
+          $v = python -c "import textfixer; print(textfixer.__version__)"
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} does not match textfixer.__version__ = $v" }
+
+      - name: Tests
+        run: python -m tests.test_layout
+
+      - name: Build
+        run: python tools/build.py --no-install
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $zip = "TextFixer-${{ github.ref_name }}.zip"
+          Compress-Archive -Path build/dist/TextFixer/* -DestinationPath $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  $zip" | Out-File "$zip.sha256" -Encoding ascii -NoNewline
+
+      - name: Release notes
+        shell: bash
+        run: |
+          prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          git log ${prev:+$prev..}"$GITHUB_REF_NAME" --no-merges --pretty='- %s' > notes.md
+          cat notes.md
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "TextFixer-$GITHUB_REF_NAME.zip" "TextFixer-$GITHUB_REF_NAME.zip.sha256" \
+            --title "TextFixer $GITHUB_REF_NAME" --notes-file notes.md

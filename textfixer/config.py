@@ -61,6 +61,7 @@ class Config:
     enter_copy_timeout_ms: int = 150
     paste_settle_ms: int = 80
     clipboard_restore_ms: int = 400
+    check_updates: bool = True
     styles: dict[str, Style] = field(default_factory=lambda: {k: replace(s) for k, s in DEFAULT_STYLES.items()})
     active_style: str = "my"
 
@@ -114,6 +115,7 @@ def load() -> Config:
         enter_copy_timeout_ms=int(tm.get("enter_copy_timeout_ms", d.enter_copy_timeout_ms)),
         paste_settle_ms=int(tm.get("paste_settle_ms", d.paste_settle_ms)),
         clipboard_restore_ms=int(tm.get("clipboard_restore_ms", d.clipboard_restore_ms)),
+        check_updates=bool(raw.get("updates", {}).get("check", d.check_updates)),
     )
 
 
@@ -130,6 +132,7 @@ def save(cfg: Config) -> None:
             "enter_copy_timeout_ms": cfg.enter_copy_timeout_ms, "paste_settle_ms": cfg.paste_settle_ms,
             "clipboard_restore_ms": cfg.clipboard_restore_ms,
         },
+        "updates": {"check": cfg.check_updates},
         "style": {"active": cfg.active_style},
         "styles": {
             k: {"name": s.name, "rewrite": s.rewrite, "strip_final_period": s.strip_final_period, "prompt": s.prompt}
@@ -141,3 +144,9 @@ def save(cfg: Config) -> None:
     with open(tmp, "wb") as f:
         tomli_w.dump(data, f, multiline_strings=True)
     os.replace(tmp, CONFIG_PATH)
+
+
+def http_proxy_kwargs(proxy: str) -> dict:
+    """httpx.Client kwargs for the proxy setting: "" = system/env, "direct" = none, else a URL."""
+    proxy = proxy.strip()
+    return {"trust_env": not proxy, "proxy": proxy if proxy and proxy != "direct" else None}

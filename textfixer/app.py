@@ -10,6 +10,7 @@ import winreg
 import pystray
 from PIL import Image, ImageDraw, ImageFont
 
+from . import __version__, updater
 from . import config as config_mod
 from . import winapi as w
 from .layout import fix_layout
@@ -20,6 +21,7 @@ log = logging.getLogger("textfixer")
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_NAME = "TextFixer"
+UPDATE_CHECK_INTERVAL_S = 6 * 3600
 
 
 def _icon(color: str) -> Image.Image:
@@ -47,6 +49,9 @@ class App:
         self.hotkeys: dict[str, w.Hotkey] = {}
         self._apply_hotkeys(self.cfg)
         self.settings: SettingsWindow | None = None
+        self.update: updater.Release | None = None
+        self._updating = False
+        self._check_now = threading.Event()
         self.hook = w.KeyboardHook(self._on_key)
         self.icon = pystray.Icon("textfixer", ICON_IDLE, f"TextFixer — {self.cfg.style.name}", self._menu())
 
@@ -291,6 +296,62 @@ class App:
             else:
                 winreg.SetValueEx(k, RUN_NAME, 0, winreg.REG_SZ, self._autostart_cmd())
 
+    # ----------------------------------------------------------- updates
+
+    def _update_loop(self) -> None:
+        notified = ""
+        self._check_now.wait(20)  # don't slow down startup
+        while True:
+            if self.cfg.check_updates or self._check_now.is_set():
+                manual = self._check_now.is_set()
+                try:
+                    self.update = updater.check(self.cfg.proxy)
+                    self.icon.update_menu()
+                    if self.update and (self.update.version != notified or manual):
+                        notified = self.update.version
+                        self.notify(f"Доступна версия {self.update.version} — меню трея → «Обновить»")
+                    elif manual:
+                        self.notify(f"Установлена последняя версия {__version__}")
+                except updater.UpdateError as e:
+                    log.warning("update check: %s", e)
+                    if manual:
+                        self.notify(f"Проверка обновлений: {e}")
+            self._check_now.clear()
+            self._check_now.wait(UPDATE_CHECK_INTERVAL_S)
+
+    def _update_action(self) -> None:
+        if not self.update:
+            self._check_now.set()
+            return
+        if not updater.is_installed():
+            self.notify("Обновление работает только в установленной версии (install.cmd)")
+            return
+        if self._updating:
+            return
+        self._updating = True
+        threading.Thread(target=self._do_update, args=(self.update,), name="update", daemon=True).start()
+
+    def _do_update(self, rel: updater.Release) -> None:
+        try:
+            self.notify(f"Скачиваю версию {rel.version}…")
+            self.icon.icon = ICON_BUSY
+            updater.download(rel, self.cfg.proxy)
+            log.info("update: %s downloaded, applying", rel.version)
+            updater.launch_apply()
+            self.quit()
+        except Exception as e:
+            log.exception("update failed")
+            self.icon.icon = ICON_ERROR
+            self.notify(f"Обновление не удалось: {e}")
+            self._updating = False
+
+    def _update_label(self, item) -> str:
+        if self._updating:
+            return "Обновление…"
+        if self.update:
+            return f"Обновить до {self.update.version}"
+        return f"Проверить обновления (версия {__version__})"
+
     def _menu(self) -> pystray.Menu:
         def hk_label(item):
             return (f"Исправить: {self.cfg.hotkey_fix} · с отправкой: {self.cfg.hotkey_fix_and_send}"
@@ -309,6 +370,7 @@ class App:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Настройки…", lambda: self.open_settings(), default=True),
             pystray.MenuItem("Открыть папку с данными", lambda: os.startfile(config_mod.DATA_DIR)),
+            pystray.MenuItem(self._update_label, lambda: self._update_action()),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Выход", self.quit),
         )
@@ -323,7 +385,15 @@ class App:
         threading.Thread(target=self._worker, name="worker", daemon=True).start()
         self.hook.start()
         self._sync_autostart()
-        log.info("started%s, %s, models=%s", " (autostart)" if "--autostart" in sys.argv else "",
+        threading.Thread(target=self._update_loop, name="updates", daemon=True).start()
+        if "--updated" in sys.argv:
+            # Give the tray a moment; if we crash before this, the apply script rolls back.
+            threading.Timer(3, updater.mark_started).start()
+            threading.Timer(3.5, self.notify, args=(f"Обновлено до версии {__version__}",)).start()
+        elif "--update-failed" in sys.argv:
+            threading.Timer(1.5, self.notify,
+                            args=("Обновление не установилось — работает прежняя версия. Подробности в update\\apply.log",)).start()
+        log.info("started %s%s, %s, models=%s", __version__, " (autostart)" if "--autostart" in sys.argv else "",
                  sys.executable, ", ".join(self.cfg.models))
         self.icon.run()
 

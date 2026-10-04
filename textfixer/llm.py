@@ -7,7 +7,7 @@ import time
 
 import httpx
 
-from .config import Config, Style
+from .config import Config, Style, http_proxy_kwargs
 
 log = logging.getLogger("textfixer")
 
@@ -36,15 +36,12 @@ class _ModelError(Exception):
 class Corrector:
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        proxy = cfg.proxy.strip()
         self.client = httpx.Client(
             base_url=cfg.base_url,
             headers={"Authorization": f"Bearer {cfg.api_key}"},
             timeout=cfg.timeout_s,
             limits=httpx.Limits(keepalive_expiry=600),
-            # "" = system/env proxy, "direct" = no proxy, otherwise an explicit URL.
-            trust_env=not proxy,
-            proxy=proxy if proxy and proxy != "direct" else None,
+            **http_proxy_kwargs(cfg.proxy),
         )
         self._failed_until: dict[str, float] = {}
         self._no_reasoning: set[str] = set()  # models that rejected reasoning_effort

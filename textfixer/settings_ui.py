@@ -99,8 +99,12 @@ class SettingsWindow:
                     width=8).pack(side="left", padx=6)
         self._row(f, 10, "Ограничения", nums)
 
+        self.v_updates = tk.BooleanVar(value=c.check_updates)
+        ttk.Checkbutton(f, text="Проверять обновления автоматически (GitHub)", variable=self.v_updates).grid(
+            row=11, column=1, sticky="w", pady=(8, 0))
+
         test = ttk.Frame(f)
-        test.grid(row=11, column=1, sticky="ew", pady=(14, 0))
+        test.grid(row=12, column=1, sticky="ew", pady=(14, 0))
         self.b_test = ttk.Button(test, text="Проверить подключение", command=self._test)
         self.b_test.pack(side="left")
         self.v_test = tk.StringVar()
@@ -324,6 +328,7 @@ class SettingsWindow:
             hotkey_fix_and_send=self.v_hk["fix_and_send"].get().strip(),
             hotkey_layout=self.v_hk["layout"].get().strip(),
             auto_enter=self.v_auto.get(),
+            check_updates=self.v_updates.get(),
             auto_enter_apps=[a.lower() for a in lines(self.t_apps)],
             **{k: num(v, k) for k, v in self.v_timing.items()},
         )
