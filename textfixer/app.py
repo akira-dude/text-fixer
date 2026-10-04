@@ -1,3 +1,4 @@
+import ctypes
 import logging
 import os
 import queue
@@ -13,6 +14,7 @@ from . import config as config_mod
 from . import winapi as w
 from .layout import fix_layout
 from .llm import Corrector, LlmError
+from .settings_ui import SettingsWindow
 
 log = logging.getLogger("textfixer")
 
@@ -43,38 +45,64 @@ class App:
         self.cfg = config_mod.load()
         self.corrector = Corrector(self.cfg)
         self.hotkeys: dict[str, w.Hotkey] = {}
-        self._apply_hotkeys()
+        self._apply_hotkeys(self.cfg)
+        self.settings: SettingsWindow | None = None
         self.hook = w.KeyboardHook(self._on_key)
         self.icon = pystray.Icon("textfixer", ICON_IDLE, f"TextFixer — {self.cfg.style.name}", self._menu())
 
     # ------------------------------------------------------------ config
 
-    def _apply_hotkeys(self) -> None:
+    def _apply_hotkeys(self, cfg: config_mod.Config) -> None:
         hk = {}
-        for name, spec in (("fix", self.cfg.hotkey_fix), ("fix_and_send", self.cfg.hotkey_fix_and_send),
-                           ("layout", self.cfg.hotkey_layout)):
+        for name, spec in (("fix", cfg.hotkey_fix), ("fix_and_send", cfg.hotkey_fix_and_send),
+                           ("layout", cfg.hotkey_layout)):
             if spec:
                 hk[name] = w.Hotkey(spec)
         self.hotkeys = hk
 
-    def reload(self) -> None:
+    def apply_config(self, cfg: config_mod.Config) -> str | None:
+        """Apply and persist settings from the settings window. Returns an error message."""
         try:
-            cfg = config_mod.load()
-            self.cfg = cfg
-            self._apply_hotkeys()
-            old, self.corrector = self.corrector, Corrector(cfg)
-            old.close()
-            self.icon.update_menu()
-            self.notify("Настройки перечитаны")
-        except Exception as e:
-            log.exception("reload failed")
-            self.notify(f"Ошибка в config.toml: {e}")
+            self._apply_hotkeys(cfg)
+            config_mod.save(cfg)
+        except (ValueError, OSError) as e:
+            self._apply_hotkeys(self.cfg)
+            return str(e)
+        self.cfg = cfg
+        old, self.corrector = self.corrector, Corrector(cfg)
+        old.close()
+        self.icon.title = f"TextFixer — {cfg.style.name}"
+        self.icon.update_menu()
+        log.info("settings saved, models=%s", ", ".join(cfg.models))
+        return None
+
+    def test_connection(self, cfg: config_mod.Config) -> str:
+        corrector = Corrector(cfg)
+        try:
+            out, dt = corrector.correct("привет как дела", cfg.style)
+            return f"✓ {corrector.last_model}, {dt * 1000:.0f} мс: «{out}»"
+        except LlmError as e:
+            return f"✗ {e}"
+        finally:
+            corrector.close()
+
+    def open_settings(self) -> None:
+        if self.settings:
+            self.settings.raise_request.set()
+            return
+
+        def closed():
+            self.settings = None
+
+        self.settings = SettingsWindow(self.cfg, self.apply_config, self.test_connection, closed)
+        threading.Thread(target=self.settings.run, name="settings", daemon=True).start()
 
     # -------------------------------------------------------------- hook
 
     def _on_key(self, vk: int, mods: frozenset) -> bool:
         """Runs inside the keyboard hook: must be fast, no I/O besides WinAPI."""
-        for name, hk in self.hotkeys.items():
+        # While the settings window is open, let hotkeys through so they can be recorded.
+        for name, hk in self.hotkeys.items() if not self.settings else ():
             if hk.vk == vk and hk.mods == mods:
                 self.jobs.put((name, w.foreground_window()))
                 return True
@@ -202,7 +230,7 @@ class App:
     def _set_style(self, key: str) -> None:
         self.cfg.active_style = key
         try:
-            config_mod.save_active_style(key)
+            config_mod.save(self.cfg)
         except OSError:
             log.exception("save style failed")
         self.icon.title = f"TextFixer — {self.cfg.style.name}"
@@ -222,12 +250,31 @@ class App:
 
     def _toggle_auto_enter(self, icon, item) -> None:
         self.cfg.auto_enter = not self.cfg.auto_enter
+        try:
+            config_mod.save(self.cfg)
+        except OSError:
+            log.exception("save failed")
 
     @staticmethod
     def _autostart_cmd() -> str:
+        if getattr(sys, "frozen", False):
+            return f'"{sys.executable}" --autostart'
         pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
         script = config_mod.ROOT / "textfixer.pyw"
-        return f'"{pythonw}" "{script}"'
+        return f'"{pythonw}" "{script}" --autostart'
+
+    def _sync_autostart(self) -> None:
+        """Point an existing autostart entry at this exe (e.g. after reinstalling elsewhere)."""
+        if not getattr(sys, "frozen", False) or not self._autostart_enabled():
+            return
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
+                                winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE) as k:
+                if winreg.QueryValueEx(k, RUN_NAME)[0] != self._autostart_cmd():
+                    winreg.SetValueEx(k, RUN_NAME, 0, winreg.REG_SZ, self._autostart_cmd())
+                    log.info("autostart entry updated")
+        except OSError:
+            log.exception("autostart sync failed")
 
     def _autostart_enabled(self, item=None) -> bool:
         try:
@@ -260,9 +307,8 @@ class App:
             pystray.MenuItem("Запускать вместе с Windows", self._toggle_autostart,
                              checked=self._autostart_enabled),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Открыть настройки", lambda: os.startfile(config_mod.CONFIG_PATH)),
-            pystray.MenuItem("Перечитать настройки", lambda: self.reload()),
-            pystray.MenuItem("Открыть лог", lambda: os.startfile(config_mod.LOG_PATH)),
+            pystray.MenuItem("Настройки…", lambda: self.open_settings(), default=True),
+            pystray.MenuItem("Открыть папку с данными", lambda: os.startfile(config_mod.DATA_DIR)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Выход", self.quit),
         )
@@ -276,11 +322,18 @@ class App:
     def run(self) -> None:
         threading.Thread(target=self._worker, name="worker", daemon=True).start()
         self.hook.start()
-        log.info("started, models=%s", ", ".join(self.cfg.models))
+        self._sync_autostart()
+        log.info("started%s, %s, models=%s", " (autostart)" if "--autostart" in sys.argv else "",
+                 sys.executable, ", ".join(self.cfg.models))
         self.icon.run()
 
 
 def main() -> None:
+    config_mod.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)  # crisp settings window on HiDPI
+    except (AttributeError, OSError):
+        pass
     logging.basicConfig(
         filename=config_mod.LOG_PATH, level=logging.INFO, encoding="utf-8",
         format="%(asctime)s %(levelname)s %(message)s",
@@ -289,11 +342,10 @@ def main() -> None:
     if not w.single_instance("Local\\TextFixerSingleInstance"):
         return
     try:
-        created = config_mod.ensure_config()
+        config_mod.ensure_config()
         app = App()
-        if created or not app.cfg.api_key:
-            os.startfile(config_mod.CONFIG_PATH)
-            threading.Timer(1.5, app.notify, args=("Впиши api_key в config.toml и нажми «Перечитать настройки»",)).start()
+        if not app.cfg.api_key:
+            threading.Timer(1.0, app.open_settings).start()
         app.run()
     except Exception:
         log.exception("fatal error")  # pythonw has no console, the log is the only trace
