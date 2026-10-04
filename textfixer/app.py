@@ -157,8 +157,12 @@ class App:
             else:
                 self.icon.icon = ICON_BUSY
                 try:
+                    prev_model = self.corrector.last_model
                     fixed, dt = self.corrector.correct(fixed, cfg.style)
                     llm_ms = dt * 1000
+                    if self.corrector.last_model != prev_model and prev_model:
+                        self.notify(f"Модель: {self.corrector.last_model}")
+                        self.icon.update_menu()
                 except LlmError as e:
                     log.warning("llm: %s", e)
                     self.icon.icon = ICON_ERROR
@@ -183,8 +187,9 @@ class App:
                 time.sleep(cfg.paste_settle_ms / 1000)
             w.tap(w.VK_RETURN)
         self._restore_later(saved)
-        log.info("%s: %d chars, changed=%s, llm %.0f ms, total %.0f ms", job, len(text),
-                 fixed != text, llm_ms, (time.perf_counter() - t0) * 1000)
+        log.info("%s: %d chars, changed=%s, llm %.0f ms (%s), total %.0f ms", job, len(text),
+                 fixed != text, llm_ms, self.corrector.last_model if llm_ms else "-",
+                 (time.perf_counter() - t0) * 1000)
 
     # -------------------------------------------------------------- tray
 
@@ -246,6 +251,8 @@ class App:
 
         return pystray.Menu(
             pystray.MenuItem(hk_label, None, enabled=False),
+            pystray.MenuItem(lambda item: f"Модель: {self.corrector.last_model or self.cfg.models[0]}",
+                             None, enabled=False),
             pystray.MenuItem(lambda item: f"Стиль: {self.cfg.style.name}", pystray.Menu(self._style_items)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Исправлять раскладку по Enter", self._toggle_auto_enter,
@@ -269,7 +276,7 @@ class App:
     def run(self) -> None:
         threading.Thread(target=self._worker, name="worker", daemon=True).start()
         self.hook.start()
-        log.info("started, model=%s", self.cfg.model)
+        log.info("started, models=%s", ", ".join(self.cfg.models))
         self.icon.run()
 
 

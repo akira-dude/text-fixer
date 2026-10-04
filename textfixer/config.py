@@ -31,7 +31,8 @@ DEFAULT_STYLES = {
 class Config:
     base_url: str = "https://api.groq.com/openai/v1"
     api_key: str = ""
-    model: str = "openai/gpt-oss-120b"
+    models: list[str] = field(default_factory=lambda: ["openai/gpt-oss-120b"])
+    proxy: str = ""
     reasoning_effort: str = "low"
     timeout_s: float = 8
     max_chars: int = 4000
@@ -76,7 +77,9 @@ def load() -> Config:
         active_style=raw.get("style", {}).get("active", next(iter(styles))),
         base_url=api.get("base_url", d.base_url).rstrip("/"),
         api_key=os.environ.get("TEXTFIXER_API_KEY") or api.get("api_key", ""),
-        model=api.get("model", d.model),
+        # "models" is a fallback chain; a single "model" is still accepted.
+        models=list(api.get("models") or [api.get("model", d.models[0])]),
+        proxy=api.get("proxy", d.proxy),
         reasoning_effort=api.get("reasoning_effort", d.reasoning_effort),
         timeout_s=float(api.get("timeout_s", d.timeout_s)),
         max_chars=int(api.get("max_chars", d.max_chars)),
