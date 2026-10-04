@@ -10,7 +10,9 @@
   Plain `enter` jobs must always end with an Enter (never swallow the user's key).
 - **Backslashes in shell heredocs / `printf`**: `\a`, `\b` became control characters in
   `install.cmd` and `README.md` once. Write files with the editor tool, not `printf`;
-  in Python string literals use `\\` for Windows paths.
+  in Python string literals use `\\` for Windows paths. In this environment even a
+  quoted bash heredoc (`<<'EOF'`) turned `\n` inside Python source into real newlines
+  and broke `config.py`: put patch scripts in a file (Write tool) and run that file.
 - **Line endings**: rewriting config with `Path.write_text` converted LF→CRLF on
   Windows. Use `newline=""` or binary writes when preserving files matters.
 - **Restarting during development**: kill only TextFixer processes

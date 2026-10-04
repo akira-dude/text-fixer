@@ -8,11 +8,10 @@ from dataclasses import replace
 from tkinter import messagebox, ttk
 from typing import Callable
 
+from . import i18n
 from . import winapi as w
 from .config import Config, Style
-
-PROXY_SYSTEM = "Системный (как в браузере)"
-PROXY_DIRECT = "Без прокси"
+from .i18n import t
 
 # Tk keysym -> our hotkey key name
 _KEYSYMS = {"space": "space", "Return": "enter", "Pause": "pause", "Tab": "tab", "Insert": "insert",
@@ -49,14 +48,14 @@ class SettingsWindow:
 
     @staticmethod
     def _text(parent, height: int, value: str) -> tk.Text:
-        t = tk.Text(parent, height=height, width=50, wrap="word", font=("Segoe UI", 10), undo=True)
-        t.insert("1.0", value)
-        return t
+        box = tk.Text(parent, height=height, width=50, wrap="word", font=("Segoe UI", 10), undo=True)
+        box.insert("1.0", value)
+        return box
 
     # --------------------------------------------------------------- tabs
 
     def _build_api(self) -> None:
-        f = self._tab("Подключение")
+        f = self._tab(t("settings.tab.api"))
         c = self.cfg
         self.v_key = tk.StringVar(value=c.api_key)
         key_box = ttk.Frame(f)
@@ -64,86 +63,75 @@ class SettingsWindow:
         self.e_key = ttk.Entry(key_box, textvariable=self.v_key, show="•")
         self.e_key.grid(row=0, column=0, sticky="ew")
         self.v_show = tk.BooleanVar()
-        ttk.Checkbutton(key_box, text="показать", variable=self.v_show,
+        ttk.Checkbutton(key_box, text=t("settings.show"), variable=self.v_show,
                         command=lambda: self.e_key.config(show="" if self.v_show.get() else "•")).grid(
             row=0, column=1, padx=(8, 0))
-        self._row(f, 0, "API-ключ", key_box)
+        self._row(f, 0, t("settings.api_key"), key_box)
 
         self.v_url = tk.StringVar(value=c.base_url)
-        self._row(f, 2, "Адрес API", ttk.Entry(f, textvariable=self.v_url),
-                  "Любой OpenAI-совместимый API. Groq: https://api.groq.com/openai/v1")
+        self._row(f, 2, t("settings.base_url"), ttk.Entry(f, textvariable=self.v_url), t("settings.base_url.hint"))
 
         self.t_models = self._text(f, 4, "\n".join(c.models))
-        self._row(f, 4, "Модели", self.t_models,
-                  "По одной в строке, по порядку. Если модель недоступна (выключена, лимит, упала), "
-                  "берётся следующая; упавшая пропускается 10 минут.")
+        self._row(f, 4, t("settings.models"), self.t_models, t("settings.models.hint"))
 
-        proxy_value = PROXY_SYSTEM if not c.proxy else PROXY_DIRECT if c.proxy == "direct" else c.proxy
+        proxy_system, proxy_direct = t("settings.proxy.system"), t("settings.proxy.direct")
+        proxy_value = proxy_system if not c.proxy else proxy_direct if c.proxy == "direct" else c.proxy
         self.v_proxy = tk.StringVar(value=proxy_value)
-        self._row(f, 6, "Прокси", ttk.Combobox(f, textvariable=self.v_proxy,
-                                                values=[PROXY_SYSTEM, PROXY_DIRECT, "http://127.0.0.1:10809"]),
-                  "Можно вписать свой адрес. Явный адрес VPN-клиента надёжнее системного.")
+        self._row(f, 6, t("settings.proxy"), ttk.Combobox(f, textvariable=self.v_proxy,
+                  values=[proxy_system, proxy_direct, "http://127.0.0.1:10809"]), t("settings.proxy.hint"))
 
         self.v_effort = tk.StringVar(value=c.reasoning_effort or "—")
-        self._row(f, 8, "Рассуждения gpt-oss", ttk.Combobox(f, textvariable=self.v_effort, state="readonly",
-                                                            values=["low", "medium", "high", "—"], width=10),
-                  "low — быстрее всего. Для других моделей не используется.")
+        self._row(f, 8, t("settings.effort"), ttk.Combobox(f, textvariable=self.v_effort, state="readonly",
+                  values=["low", "medium", "high", "—"], width=10), t("settings.effort.hint"))
 
         nums = ttk.Frame(f)
         self.v_timeout = tk.StringVar(value=f"{c.timeout_s:g}")
         self.v_maxchars = tk.StringVar(value=str(c.max_chars))
-        ttk.Label(nums, text="таймаут, с").pack(side="left")
+        ttk.Label(nums, text=t("settings.timeout")).pack(side="left")
         ttk.Spinbox(nums, from_=2, to=60, textvariable=self.v_timeout, width=6).pack(side="left", padx=(6, 18))
-        ttk.Label(nums, text="макс. символов").pack(side="left")
+        ttk.Label(nums, text=t("settings.max_chars")).pack(side="left")
         ttk.Spinbox(nums, from_=100, to=20000, increment=500, textvariable=self.v_maxchars,
                     width=8).pack(side="left", padx=6)
-        self._row(f, 10, "Ограничения", nums)
+        self._row(f, 10, t("settings.limits"), nums)
 
         self.v_updates = tk.BooleanVar(value=c.check_updates)
-        ttk.Checkbutton(f, text="Проверять обновления автоматически (GitHub)", variable=self.v_updates).grid(
+        ttk.Checkbutton(f, text=t("settings.check_updates"), variable=self.v_updates).grid(
             row=11, column=1, sticky="w", pady=(8, 0))
 
         test = ttk.Frame(f)
         test.grid(row=12, column=1, sticky="ew", pady=(14, 0))
-        self.b_test = ttk.Button(test, text="Проверить подключение", command=self._test)
+        self.b_test = ttk.Button(test, text=t("settings.test"), command=self._test)
         self.b_test.pack(side="left")
         self.v_test = tk.StringVar()
         ttk.Label(test, textvariable=self.v_test, wraplength=300, justify="left").pack(side="left", padx=10)
 
     def _build_hotkeys(self) -> None:
-        f = self._tab("Горячие клавиши")
+        f = self._tab(t("settings.tab.hotkeys"))
         c = self.cfg
         self.v_hk = {}
-        rows = [("fix", "Исправить", c.hotkey_fix, "раскладка + ИИ, стилем из трея"),
-                ("fix_and_send", "Исправить и отправить", c.hotkey_fix_and_send, "то же и сразу Enter"),
-                ("layout", "Только раскладка", c.hotkey_layout, "без ИИ, мгновенно")]
-        for i, (key, label, value, hint) in enumerate(rows):
+        rows = [("fix", c.hotkey_fix), ("fix_and_send", c.hotkey_fix_and_send), ("layout", c.hotkey_layout)]
+        for i, (key, value) in enumerate(rows):
             v = tk.StringVar(value=value)
             self.v_hk[key] = v
             box = ttk.Frame(f)
             box.columnconfigure(0, weight=1)
             e = ttk.Entry(box, textvariable=v)
             e.grid(row=0, column=0, sticky="ew")
-            ttk.Button(box, text="Записать", command=lambda v=v, e=e: self._record(v, e)).grid(
+            ttk.Button(box, text=t("settings.hk.record"), command=lambda v=v, e=e: self._record(v, e)).grid(
                 row=0, column=1, padx=(8, 0))
-            self._row(f, i * 2, label, box, hint)
-        ttk.Label(f, foreground="#666", wraplength=520, justify="left", text=(
-            "«Записать» — нажми нужное сочетание (Esc — отмена, Backspace — без клавиши). "
-            "Можно вписать вручную: модификаторы ctrl, shift, alt, win; клавиши a-z, 0-9, f1-f24, "
-            "space, enter, pause, insert, home, end…")).grid(row=7, column=0, columnspan=2, sticky="w", pady=(10, 0))
+            self._row(f, i * 2, t(f"settings.hk.{key}"), box, t(f"settings.hk.{key}.hint"))
+        ttk.Label(f, foreground="#666", wraplength=520, justify="left", text=t("settings.hk.help")).grid(row=7, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
     def _build_enter(self) -> None:
-        f = self._tab("Enter")
+        f = self._tab(t("settings.tab.enter"))
         self.v_auto = tk.BooleanVar(value=self.cfg.auto_enter)
-        ttk.Checkbutton(f, text="Исправлять раскладку по Enter перед отправкой", variable=self.v_auto).grid(
+        ttk.Checkbutton(f, text=t("settings.enter.enabled"), variable=self.v_auto).grid(
             row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
         self.t_apps = self._text(f, 6, "\n".join(self.cfg.auto_enter_apps))
-        self._row(f, 1, "Приложения", self.t_apps,
-                  "Имена exe по одному в строке (как в диспетчере задач → Подробности). "
-                  "Shift+Enter (перенос строки) не трогается.")
+        self._row(f, 1, t("settings.enter.apps"), self.t_apps, t("settings.enter.apps.hint"))
 
     def _build_styles(self) -> None:
-        f = self._tab("Стили")
+        f = self._tab(t("settings.tab.styles"))
         f.columnconfigure(1, weight=1)
         f.rowconfigure(0, weight=1)
         left = ttk.Frame(f)
@@ -153,49 +141,48 @@ class SettingsWindow:
         self.lb_styles.bind("<<ListboxSelect>>", lambda e: self._select_style())
         btns = ttk.Frame(left)
         btns.pack(fill="x", pady=(6, 0))
-        ttk.Button(btns, text="Добавить", command=self._add_style).pack(side="left", expand=True, fill="x")
-        ttk.Button(btns, text="Удалить", command=self._del_style).pack(side="left", expand=True, fill="x", padx=(4, 0))
+        ttk.Button(btns, text=t("settings.style.add"), command=self._add_style).pack(side="left", expand=True, fill="x")
+        ttk.Button(btns, text=t("settings.style.delete"), command=self._del_style).pack(side="left", expand=True, fill="x", padx=(4, 0))
 
         right = ttk.Frame(f)
         right.grid(row=0, column=1, sticky="nsew")
         right.columnconfigure(1, weight=1)
         right.rowconfigure(4, weight=1)
         self.v_sname = tk.StringVar()
-        self._row(right, 0, "Название", ttk.Entry(right, textvariable=self.v_sname))
+        self._row(right, 0, t("settings.style.name"), ttk.Entry(right, textvariable=self.v_sname))
         self.v_rewrite = tk.BooleanVar()
         self.v_strip = tk.BooleanVar()
-        ttk.Checkbutton(right, text="Переписывать текст (разрешить менять длину)", variable=self.v_rewrite).grid(
+        ttk.Checkbutton(right, text=t("settings.style.rewrite"), variable=self.v_rewrite).grid(
             row=1, column=1, sticky="w")
-        ttk.Checkbutton(right, text="Убирать точку в конце сообщения", variable=self.v_strip).grid(
+        ttk.Checkbutton(right, text=t("settings.style.strip"), variable=self.v_strip).grid(
             row=2, column=1, sticky="w", pady=(0, 6))
-        ttk.Label(right, text="Инструкция").grid(row=3, column=0, sticky="nw", padx=(0, 10))
+        ttk.Label(right, text=t("settings.style.prompt")).grid(row=3, column=0, sticky="nw", padx=(0, 10))
         self.t_prompt = self._text(right, 10, "")
         self.t_prompt.grid(row=3, column=1, rowspan=2, sticky="nsew")
-        ttk.Label(right, foreground="#666", wraplength=420, justify="left", text=(
-            "Общие правила добавляются всегда: не переводить, не отвечать на сообщение, "
-            "сохранять ссылки, @упоминания, эмодзи и переносы строк.")).grid(row=5, column=1, sticky="w", pady=(6, 0))
+        ttk.Label(right, foreground="#666", wraplength=420, justify="left", text=t("settings.style.hint")).grid(row=5, column=1, sticky="w", pady=(6, 0))
 
         self._style_keys: list[str] = []
         self._cur_style: str | None = None
         self._refresh_styles(self.cfg.active_style)
 
     def _build_timing(self) -> None:
-        f = self._tab("Тайминги")
+        f = self._tab(t("settings.tab.timing"))
         c = self.cfg
         self.v_timing = {}
-        rows = [("select_delay_ms", "Пауза после Ctrl+A", c.select_delay_ms,
-                 "Discord применяет выделение не сразу. Если первое нажатие не срабатывает — увеличь."),
-                ("copy_timeout_ms", "Ожидание копирования", c.copy_timeout_ms, "для горячих клавиш"),
-                ("enter_copy_timeout_ms", "Ожидание копирования при Enter", c.enter_copy_timeout_ms,
-                 "на пустом поле Enter задерживается на это время"),
-                ("paste_settle_ms", "Пауза перед Enter после вставки", c.paste_settle_ms, ""),
-                ("clipboard_restore_ms", "Возврат буфера обмена через", c.clipboard_restore_ms, "")]
-        for i, (key, label, value, hint) in enumerate(rows):
+        self.timing_labels = {}
+        rows = [("select_delay_ms", "select_delay", True), ("copy_timeout_ms", "copy_timeout", True),
+                ("enter_copy_timeout_ms", "enter_copy_timeout", True), ("paste_settle_ms", "paste_settle", False),
+                ("clipboard_restore_ms", "clipboard_restore", False)]
+        for i, (key, name, has_hint) in enumerate(rows):
+            value = getattr(c, key)
+            label = t(f"settings.timing.{name}")
+            hint = t(f"settings.timing.{name}.hint") if has_hint else ""
+            self.timing_labels[key] = label
             v = tk.StringVar(value=str(value))
             self.v_timing[key] = v
             box = ttk.Frame(f)
             ttk.Spinbox(box, from_=0, to=5000, increment=10, textvariable=v, width=8).pack(side="left")
-            ttk.Label(box, text="мс").pack(side="left", padx=6)
+            ttk.Label(box, text=t("settings.ms")).pack(side="left", padx=6)
             self._row(f, i * 2, label, box, hint)
 
     # ------------------------------------------------------------- styles
@@ -240,13 +227,13 @@ class SettingsWindow:
         while f"style{n}" in self.cfg.styles:
             n += 1
         key = f"style{n}"
-        self.cfg.styles[key] = Style(key, f"Новый стиль {n}", "Исправь орфографию и пунктуацию.")
+        self.cfg.styles[key] = Style(key, t("settings.style.new_name", n=n), t("settings.style.new_prompt"))
         self._cur_style = None
         self._refresh_styles(key)
 
     def _del_style(self) -> None:
         if len(self.cfg.styles) <= 1 or not self._cur_style:
-            messagebox.showinfo("TextFixer", "Должен остаться хотя бы один стиль.", parent=self.root)
+            messagebox.showinfo("TextFixer", t("settings.style.keep_one"), parent=self.root)
             return
         del self.cfg.styles[self._cur_style]
         if self.cfg.active_style not in self.cfg.styles:
@@ -258,7 +245,7 @@ class SettingsWindow:
 
     def _record(self, var: tk.StringVar, entry: ttk.Entry) -> None:
         old = var.get()
-        var.set("нажми сочетание…")
+        var.set(t("settings.hk.press"))
         entry.focus_set()
 
         def on_key(e):
@@ -293,12 +280,13 @@ class SettingsWindow:
     def _collect(self) -> Config:
         """Read the form into a Config. Raises ValueError with a readable message."""
         self._store_style()
-        lines = lambda t: [x.strip() for x in t.get("1.0", "end").splitlines() if x.strip()]
+        lines = lambda box: [x.strip() for x in box.get("1.0", "end").splitlines() if x.strip()]
         proxy = self.v_proxy.get().strip()
-        proxy = "" if proxy in ("", PROXY_SYSTEM) else "direct" if proxy == PROXY_DIRECT else proxy
+        proxy = ("" if proxy in ("", t("settings.proxy.system"))
+                 else "direct" if proxy == t("settings.proxy.direct") else proxy)
         models = lines(self.t_models)
         if not models:
-            raise ValueError("Укажи хотя бы одну модель")
+            raise ValueError(t("settings.err.no_models"))
         for name, v in self.v_hk.items():
             if v.get().strip():
                 try:
@@ -307,13 +295,13 @@ class SettingsWindow:
                     raise ValueError(str(e))
         specs = [v.get().strip().lower() for v in self.v_hk.values() if v.get().strip()]
         if len(specs) != len(set(specs)):
-            raise ValueError("Одно сочетание назначено дважды")
+            raise ValueError(t("settings.err.duplicate_hotkey"))
 
         def num(v, name, cast=int):
             try:
                 return cast(v.get())
             except ValueError:
-                raise ValueError(f"«{name}» — должно быть число")
+                raise ValueError(t("settings.err.not_number", field=name))
 
         return replace(
             self.cfg,
@@ -322,16 +310,21 @@ class SettingsWindow:
             models=models,
             proxy=proxy,
             reasoning_effort="" if self.v_effort.get() == "—" else self.v_effort.get(),
-            timeout_s=num(self.v_timeout, "таймаут", float),
-            max_chars=num(self.v_maxchars, "макс. символов"),
+            timeout_s=num(self.v_timeout, t("settings.timeout"), float),
+            max_chars=num(self.v_maxchars, t("settings.max_chars")),
             hotkey_fix=self.v_hk["fix"].get().strip(),
             hotkey_fix_and_send=self.v_hk["fix_and_send"].get().strip(),
             hotkey_layout=self.v_hk["layout"].get().strip(),
             auto_enter=self.v_auto.get(),
             check_updates=self.v_updates.get(),
             auto_enter_apps=[a.lower() for a in lines(self.t_apps)],
-            **{k: num(v, k) for k, v in self.v_timing.items()},
+            language=self._language_code(),
+            **{k: num(v, self.timing_labels[k]) for k, v in self.v_timing.items()},
         )
+
+    def _language_code(self) -> str:
+        names = {name: code for code, name in i18n.languages().items()}
+        return names.get(self.v_lang.get(), self.cfg.language)
 
     def _save(self) -> None:
         try:
@@ -352,7 +345,7 @@ class SettingsWindow:
             self.v_test.set(str(e))
             return
         self.b_test.state(["disabled"])
-        self.v_test.set("Проверяю…")
+        self.v_test.set(t("settings.testing"))
         threading.Thread(target=lambda: self._results.put(self.on_test(cfg)), daemon=True).start()
 
     def _poll(self) -> None:
@@ -377,7 +370,7 @@ class SettingsWindow:
     def run(self) -> None:
         try:
             self.root = tk.Tk()
-            self.root.title("TextFixer — настройки")
+            self.root.title(t("settings.title"))
             self.root.minsize(640, 520)
             try:
                 ttk.Style(self.root).theme_use("vista")
@@ -394,8 +387,12 @@ class SettingsWindow:
             self._build_timing()
             bar = ttk.Frame(outer)
             bar.pack(fill="x", pady=(10, 0))
-            ttk.Button(bar, text="Отмена", command=self._close).pack(side="right")
-            ttk.Button(bar, text="Сохранить", command=self._save).pack(side="right", padx=(0, 8))
+            ttk.Label(bar, text=t("settings.language")).pack(side="left")
+            self.v_lang = tk.StringVar(value=i18n.languages().get(self.cfg.language, "English"))
+            ttk.Combobox(bar, textvariable=self.v_lang, state="readonly", width=14,
+                         values=list(i18n.languages().values())).pack(side="left", padx=(8, 0))
+            ttk.Button(bar, text=t("settings.cancel"), command=self._close).pack(side="right")
+            ttk.Button(bar, text=t("settings.save"), command=self._save).pack(side="right", padx=(0, 8))
             self.root.protocol("WM_DELETE_WINDOW", self._close)
             self.root.after(150, self._poll)
             self.root.lift()

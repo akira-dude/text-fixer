@@ -9,9 +9,10 @@ Read next: [`docs/agent/INDEX.md`](docs/agent/INDEX.md).
 
 ## Ground rules
 
-- **Language**: chat with the user in Russian. UI strings and notifications are Russian.
-  README, code, comments, agent docs (`AGENTS.md`, `docs/agent/**`) and commit
-  messages are English.
+- **Language**: chat with the user in Russian. The app UI is localized (English default,
+  Russian available): never hardcode user-visible strings, use `t()` and add the key to
+  every locale (`docs/agent/i18n.md`). README, code, comments, agent docs (`AGENTS.md`,
+  `docs/agent/**`) and commit messages are English.
 - **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`…), English.
   This repo has no release branches: work directly on `main`, push to `origin main`.
   No AI attribution lines in commits.
@@ -26,6 +27,7 @@ Read next: [`docs/agent/INDEX.md`](docs/agent/INDEX.md).
 
 ```bash
 .venv\Scripts\python -m tests.test_layout   # layout detection tests (must stay green)
+.venv\Scripts\python -m tests.test_i18n     # locale keys/placeholders consistency
 .venv\Scripts\python -m textfixer           # run from source (stop the installed exe first: single instance)
 install.cmd                                 # build TextFixer.exe and install it locally
 ```

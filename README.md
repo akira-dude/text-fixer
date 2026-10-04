@@ -6,7 +6,7 @@ A Windows tray app that fixes the text you are typing — in any app (Discord, T
 - **Spelling, capitalization, punctuation, tone**: via a fast remote LLM (Groq by default; any OpenAI-compatible API works).
 - **Enter in Discord / Telegram**: if the message was typed in the wrong layout, it is fixed first and then sent.
 
-The UI is in Russian.
+The UI is available in English (default) and Russian — pick the language at the bottom of the settings window.
 
 ## Install
 
@@ -14,13 +14,13 @@ The UI is in Russian.
 
 **From source.** Run `install.cmd`. It creates `.venv`, builds `TextFixer.exe` with PyInstaller, installs it to `%LOCALAPPDATA%\TextFixer\app` and starts it. Run it again after code changes to rebuild and reinstall; settings are kept. To run without building: `.venv\Scripts\python -m textfixer`.
 
-On first start the settings window opens: paste an API key (e.g. from [console.groq.com](https://console.groq.com)) and press «Проверить подключение» (test connection).
+On first start the settings window opens: paste an API key (e.g. from [console.groq.com](https://console.groq.com)) and press **Test connection**.
 
 Start with Windows: a checkbox in the tray menu.
 
 ## Settings
 
-Tray menu → «Настройки…» (or click the tray icon): API key, models, proxy, hotkeys, apps for the Enter fix, styles, timings. Changes apply immediately.
+Tray menu → **Settings…** (or click the tray icon): API key, models, proxy, hotkeys, apps for the Enter fix, styles, timings. Changes apply immediately.
 
 Data lives outside the repo and the app folder, in `%LOCALAPPDATA%\TextFixer`: `config.toml` (settings, including the API key) and `textfixer.log`. The log contains only timings and text lengths, never the text itself.
 
@@ -39,18 +39,18 @@ Data lives outside the repo and the app folder, in `%LOCALAPPDATA%\TextFixer`: `
 
 ## Styles
 
-Pick the correction style in the tray («Стиль» submenu). Built in:
+Pick the correction style in the tray (**Style** submenu). Built in:
 
-- **Мой стиль** (my style) — spelling, commas and capitals only; wording and slang stay, no period at the end.
-- **Деловой** (business) — rewrites the message in a polite business tone.
+- **My style** — spelling, commas and capitals only; wording and slang stay, no period at the end.
+- **Business** — rewrites the message in a polite business tone.
 
-Edit styles or add your own in Settings → «Стили». Fixed rules (never translate, never answer the message, keep links/mentions/emojis) are always added; see `textfixer/llm.py`.
+Edit styles or add your own in Settings → **Styles**. Fixed rules (never translate, never answer the message, keep links/mentions/emojis) are always added; see `textfixer/llm.py`.
 
 Tray icon: blue — idle, yellow — waiting for the model, red — error (details in the notification and the log).
 
 ## Updates
 
-The app checks GitHub Releases on start and every 6 hours (can be disabled in Settings). When a new version is out, you get a notification and a «Обновить до X» (update to X) tray item: the zip is downloaded and its SHA-256 verified, the app folder is swapped and the app restarts. Settings are untouched. If the new version fails to start, the previous one is restored automatically.
+The app checks GitHub Releases on start and every 6 hours (can be disabled in Settings). When a new version is out, you get a notification and an **Update to X** tray item: the zip is downloaded and its SHA-256 verified, the app folder is swapped and the app restarts. Settings are untouched. If the new version fails to start, the previous one is restored automatically.
 
 Publishing a version: bump `__version__` in `textfixer/__init__.py`, commit, push a `vX.Y.Z` tag — GitHub Actions builds the exe and publishes the release.
 

@@ -24,25 +24,48 @@ class Style:
     strip_final_period: bool = False
 
 
-DEFAULT_STYLES = {
-    "my": Style("my", "Мой стиль", (
-        "Исправь только орфографию, грамматику, запятые и заглавные буквы.\n"
-        "Сохрани мои формулировки, сленг, тон и порядок слов. Не перефразируй, не сокращай и не дополняй.\n"
-        "Каждое предложение начинай с заглавной буквы.\n"
-        "В конце последнего предложения точку не ставь.\n"
-        "Если всё уже правильно, верни текст без изменений."
-    ), strip_final_period=True),
-    "business": Style("business", "Деловой", (
-        "Перепиши сообщение в вежливом, ясном деловом стиле — для рабочей переписки с коллегами или клиентами.\n"
-        "Полные предложения, правильная пунктуация, без сленга, слов-паразитов и мата.\n"
-        "Сохрани смысл и все факты. Не добавляй приветствий, подписей и деталей, которых нет в исходнике.\n"
-        "Длина — примерно как у исходного сообщения."
-    ), rewrite=True),
+_DEFAULT_STYLES = {
+    "en": {
+        "my": Style("my", "My style", (
+            "Fix only spelling, grammar, commas and capitalization.\n"
+            "Keep my wording, slang, tone and word order. Do not rephrase, shorten or extend.\n"
+            "Start every sentence with a capital letter.\n"
+            "Do not put a period after the last sentence.\n"
+            "If everything is already correct, return the text unchanged."
+        ), strip_final_period=True),
+        "business": Style("business", "Business", (
+            "Rewrite the message in a polite, clear business style for work chats with colleagues or clients.\n"
+            "Complete sentences, correct punctuation, no slang, filler words or profanity.\n"
+            "Keep the meaning and all facts. Do not add greetings, signatures or details that are not in the original.\n"
+            "Keep it about as long as the original."
+        ), rewrite=True),
+    },
+    "ru": {
+        "my": Style("my", "Мой стиль", (
+            "Исправь только орфографию, грамматику, запятые и заглавные буквы.\n"
+            "Сохрани мои формулировки, сленг, тон и порядок слов. Не перефразируй, не сокращай и не дополняй.\n"
+            "Каждое предложение начинай с заглавной буквы.\n"
+            "В конце последнего предложения точку не ставь.\n"
+            "Если всё уже правильно, верни текст без изменений."
+        ), strip_final_period=True),
+        "business": Style("business", "Деловой", (
+            "Перепиши сообщение в вежливом, ясном деловом стиле — для рабочей переписки с коллегами или клиентами.\n"
+            "Полные предложения, правильная пунктуация, без сленга, слов-паразитов и мата.\n"
+            "Сохрани смысл и все факты. Не добавляй приветствий, подписей и деталей, которых нет в исходнике.\n"
+            "Длина — примерно как у исходного сообщения."
+        ), rewrite=True),
+    },
 }
+
+
+def default_styles(language: str = "en") -> dict[str, Style]:
+    """Fresh copies of the built-in styles, in the UI language if available."""
+    return {k: replace(s) for k, s in _DEFAULT_STYLES.get(language, _DEFAULT_STYLES["en"]).items()}
 
 
 @dataclass
 class Config:
+    language: str = "en"  # UI language, see textfixer/locales
     base_url: str = "https://api.groq.com/openai/v1"
     api_key: str = ""
     models: list[str] = field(default_factory=lambda: [
@@ -62,7 +85,7 @@ class Config:
     paste_settle_ms: int = 80
     clipboard_restore_ms: int = 400
     check_updates: bool = True
-    styles: dict[str, Style] = field(default_factory=lambda: {k: replace(s) for k, s in DEFAULT_STYLES.items()})
+    styles: dict[str, Style] = field(default_factory=default_styles)
     active_style: str = "my"
 
     @property
@@ -95,6 +118,7 @@ def load() -> Config:
         for key, s in raw.get("styles", {}).items()
     } or d.styles
     return Config(
+        language=raw.get("ui", {}).get("language", d.language),
         styles=styles,
         active_style=raw.get("style", {}).get("active", next(iter(styles))),
         base_url=api.get("base_url", d.base_url).rstrip("/"),
@@ -121,6 +145,7 @@ def load() -> Config:
 
 def save(cfg: Config) -> None:
     data = {
+        "ui": {"language": cfg.language},
         "api": {
             "base_url": cfg.base_url, "api_key": cfg.api_key, "models": cfg.models, "proxy": cfg.proxy,
             "reasoning_effort": cfg.reasoning_effort, "timeout_s": cfg.timeout_s, "max_chars": cfg.max_chars,

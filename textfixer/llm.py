@@ -8,6 +8,7 @@ import time
 import httpx
 
 from .config import Config, Style, http_proxy_kwargs
+from .i18n import t
 
 log = logging.getLogger("textfixer")
 
@@ -97,11 +98,11 @@ class Corrector:
             except (httpx.RemoteProtocolError, httpx.ReadError):
                 r = self.client.post("/chat/completions", json=body)  # stale keep-alive connection
         except httpx.ProxyError as e:
-            raise LlmError("Прокси недоступен — VPN выключен?") from e
+            raise LlmError(t("llm.proxy_down")) from e
         except httpx.TimeoutException as e:
-            raise _ModelError(f"таймаут {self.cfg.timeout_s:g} с") from e
+            raise _ModelError(t("llm.timeout", seconds=f"{self.cfg.timeout_s:g}")) from e
         except httpx.HTTPError as e:
-            raise LlmError(f"Сеть: {e.__class__.__name__} — проверь интернет/VPN") from e
+            raise LlmError(t("llm.network", error=e.__class__.__name__)) from e
 
         if r.status_code == 200:
             return r.json()["choices"][0]["message"]["content"] or ""
@@ -113,10 +114,10 @@ class Corrector:
             self._no_reasoning.add(model)
             return self._request(model, style, core)
         if r.status_code in (401,):
-            raise LlmError("Неверный api_key")
+            raise LlmError(t("llm.bad_key"))
         if r.status_code == 403 and "model" not in msg.lower():
             # Region / network block: every model fails the same way.
-            raise LlmError(f"Groq блокирует запрос по сети ({msg}) — проверь VPN")
+            raise LlmError(t("llm.region_block", message=msg))
         if r.status_code in (400, 403, 404, 413, 429, 498) or r.status_code >= 500:
             raise _ModelError(f"{r.status_code}: {msg}")
         raise LlmError(f"API {r.status_code}: {msg}")
@@ -124,7 +125,7 @@ class Corrector:
     def correct(self, text: str, style: Style) -> tuple[str, float]:
         """Returns the corrected text and request time in seconds."""
         if not self.cfg.api_key:
-            raise LlmError("Не задан api_key в config.toml")
+            raise LlmError(t("llm.no_key"))
         core = text.strip()
         if not core:
             return text, 0.0
@@ -142,14 +143,14 @@ class Corrector:
             self.last_model = model
             break
         else:
-            raise LlmError("Все модели недоступны. " + " | ".join(errors))
+            raise LlmError(t("llm.all_failed", errors=" | ".join(errors)))
         dt = time.perf_counter() - t0
 
         out = re.sub(r"^\s*<text>|</text>\s*$", "", out.strip()).strip()
         # Guard against the model answering the message instead of fixing it.
         lo, hi = (0.3, 3.0) if style.rewrite else (0.6, 1.6)
         if not out or (len(core) > 20 and not lo < len(out) / len(core) < hi):
-            raise LlmError("Модель вернула что-то странное, текст не тронут")
+            raise LlmError(t("llm.weird_answer"))
         if style.strip_final_period and out.endswith(".") and not out.endswith(".."):
             out = out[:-1]
         lead = text[: len(text) - len(text.lstrip())]

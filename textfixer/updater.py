@@ -22,6 +22,7 @@ import httpx
 
 from . import __version__
 from .config import DATA_DIR, http_proxy_kwargs
+from .i18n import t
 
 log = logging.getLogger("textfixer")
 
@@ -115,7 +116,7 @@ def check(proxy: str) -> Release | None:
         try:
             r = c.get(LATEST_URL, headers={"Accept": "application/vnd.github+json"})
         except httpx.HTTPError as e:
-            raise UpdateError(f"GitHub недоступен: {e.__class__.__name__}") from e
+            raise UpdateError(t("upd.github_down", error=e.__class__.__name__)) from e
     if r.status_code == 404:
         return None  # no releases yet
     if r.status_code != 200:
@@ -127,7 +128,7 @@ def check(proxy: str) -> Release | None:
     assets = {a["name"]: a for a in data.get("assets", [])}
     zips = [a for name, a in assets.items() if name.startswith("TextFixer") and name.endswith(".zip")]
     if not zips:
-        raise UpdateError(f"В релизе {version} нет архива")
+        raise UpdateError(t("upd.no_archive", version=version))
     z = zips[0]
     digest = z.get("digest") or ""
     sha_asset = assets.get(z["name"] + ".sha256")
@@ -152,7 +153,7 @@ def download(rel: Release, proxy: str) -> Path:
         if not expected and rel.sha256_url:
             expected = c.get(rel.sha256_url).text.split()[0].lower()
         if not expected:
-            raise UpdateError("Нет контрольной суммы — обновление не установлено")
+            raise UpdateError(t("upd.no_checksum"))
         try:
             with c.stream("GET", rel.zip_url) as r, open(zip_path, "wb") as f:
                 r.raise_for_status()
@@ -160,22 +161,22 @@ def download(rel: Release, proxy: str) -> Path:
                     f.write(chunk)
                     h.update(chunk)
         except httpx.HTTPError as e:
-            raise UpdateError(f"Не удалось скачать: {e.__class__.__name__}") from e
+            raise UpdateError(t("upd.download_failed", error=e.__class__.__name__)) from e
     if h.hexdigest() != expected:
         zip_path.unlink(missing_ok=True)
-        raise UpdateError("Контрольная сумма не совпала — архив повреждён")
+        raise UpdateError(t("upd.bad_checksum"))
 
     if NEW_DIR.exists():
         shutil.rmtree(NEW_DIR)
     with zipfile.ZipFile(zip_path) as zf:
         for name in zf.namelist():
             if name.startswith(("/", "\\")) or ".." in Path(name).parts:
-                raise UpdateError("Подозрительный путь в архиве")
+                raise UpdateError(t("upd.bad_path"))
         zf.extractall(NEW_DIR)
     zip_path.unlink(missing_ok=True)
     if not (NEW_DIR / "TextFixer.exe").exists():
         shutil.rmtree(NEW_DIR, ignore_errors=True)
-        raise UpdateError("В архиве нет TextFixer.exe")
+        raise UpdateError(t("upd.no_exe"))
     return NEW_DIR
 
 

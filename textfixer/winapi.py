@@ -7,6 +7,8 @@ import time
 from ctypes import wintypes as wt
 from typing import Callable
 
+from .i18n import t
+
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
@@ -109,9 +111,9 @@ class Hotkey:
             elif len(part) == 1 and part.isalnum():
                 vk = ord(part.upper())
             else:
-                raise ValueError(f"Неизвестная клавиша '{part}' в '{spec}'")
+                raise ValueError(t("hotkey.unknown_key", key=part, spec=spec))
         if vk is None:
-            raise ValueError(f"В '{spec}' нет основной клавиши")
+            raise ValueError(t("hotkey.no_main_key", spec=spec))
         self.mods = frozenset(mods)
         self.vk = vk
 

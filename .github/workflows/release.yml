@@ -36,7 +36,9 @@ jobs:
           if ("v$v" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} does not match textfixer.__version__ = $v" }
 
       - name: Tests
-        run: python -m tests.test_layout
+        run: |
+          python -m tests.test_layout
+          python -m tests.test_i18n
 
       - name: Build
         run: python tools/build.py --no-install

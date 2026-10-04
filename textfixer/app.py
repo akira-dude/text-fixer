@@ -10,10 +10,11 @@ import winreg
 import pystray
 from PIL import Image, ImageDraw, ImageFont
 
-from . import __version__, updater
+from . import __version__, i18n, updater
 from . import config as config_mod
 from . import winapi as w
 from .layout import fix_layout
+from .i18n import t
 from .llm import Corrector, LlmError
 from .settings_ui import SettingsWindow
 
@@ -45,6 +46,7 @@ class App:
     def __init__(self) -> None:
         self.jobs: queue.Queue = queue.Queue()
         self.cfg = config_mod.load()
+        i18n.set_language(self.cfg.language)
         self.corrector = Corrector(self.cfg)
         self.hotkeys: dict[str, w.Hotkey] = {}
         self._apply_hotkeys(self.cfg)
@@ -53,7 +55,7 @@ class App:
         self._updating = False
         self._check_now = threading.Event()
         self.hook = w.KeyboardHook(self._on_key)
-        self.icon = pystray.Icon("textfixer", ICON_IDLE, f"TextFixer — {self.cfg.style.name}", self._menu())
+        self.icon = pystray.Icon("textfixer", ICON_IDLE, t("tray.title", style=self.cfg.style.name), self._menu())
 
     # ------------------------------------------------------------ config
 
@@ -74,9 +76,10 @@ class App:
             self._apply_hotkeys(self.cfg)
             return str(e)
         self.cfg = cfg
+        i18n.set_language(cfg.language)
         old, self.corrector = self.corrector, Corrector(cfg)
         old.close()
-        self.icon.title = f"TextFixer — {cfg.style.name}"
+        self.icon.title = t("tray.title", style=cfg.style.name)
         self.icon.update_menu()
         log.info("settings saved, models=%s", ", ".join(cfg.models))
         return None
@@ -84,10 +87,10 @@ class App:
     def test_connection(self, cfg: config_mod.Config) -> str:
         corrector = Corrector(cfg)
         try:
-            out, dt = corrector.correct("привет как дела", cfg.style)
-            return f"✓ {corrector.last_model}, {dt * 1000:.0f} мс: «{out}»"
+            out, dt = corrector.correct(t("test.sample"), cfg.style)
+            return t("test.ok", model=corrector.last_model, ms=f"{dt * 1000:.0f}", text=out)
         except LlmError as e:
-            return f"✗ {e}"
+            return t("test.fail", error=e)
         finally:
             corrector.close()
 
@@ -128,7 +131,7 @@ class App:
                 self._run_job(job, hwnd)
             except Exception as e:
                 log.exception("job %s failed", job)
-                self.notify(f"Ошибка: {e}")
+                self.notify(t("notify.error", error=e))
                 if job == "enter":
                     w.tap(w.VK_RETURN)  # never swallow the user's Enter
             finally:
@@ -186,7 +189,7 @@ class App:
         llm_ms = 0.0
         if job in ("fix", "fix_and_send"):
             if len(fixed) > cfg.max_chars:
-                self.notify(f"Текст длиннее {cfg.max_chars} символов — исправлена только раскладка")
+                self.notify(t("notify.too_long", max=cfg.max_chars))
             else:
                 self.icon.icon = ICON_BUSY
                 try:
@@ -194,7 +197,7 @@ class App:
                     fixed, dt = self.corrector.correct(fixed, cfg.style)
                     llm_ms = dt * 1000
                     if self.corrector.last_model != prev_model and prev_model:
-                        self.notify(f"Модель: {self.corrector.last_model}")
+                        self.notify(t("notify.model_switched", model=self.corrector.last_model))
                         self.icon.update_menu()
                 except LlmError as e:
                     log.warning("llm: %s", e)
@@ -210,7 +213,7 @@ class App:
         if w.foreground_window() != hwnd:
             # The user switched windows while we waited for the model.
             w.set_clipboard_text(fixed)
-            self.notify("Окно сменилось — исправленный текст лежит в буфере обмена")
+            self.notify(t("notify.window_changed"))
             return
 
         if fixed != text:
@@ -238,7 +241,7 @@ class App:
             config_mod.save(self.cfg)
         except OSError:
             log.exception("save style failed")
-        self.icon.title = f"TextFixer — {self.cfg.style.name}"
+        self.icon.title = t("tray.title", style=self.cfg.style.name)
 
     def _style_item(self, key: str, name: str) -> pystray.MenuItem:
         # pystray inspects the arity of callbacks, so no default-arg lambdas here.
@@ -309,13 +312,13 @@ class App:
                     self.icon.update_menu()
                     if self.update and (self.update.version != notified or manual):
                         notified = self.update.version
-                        self.notify(f"Доступна версия {self.update.version} — меню трея → «Обновить»")
+                        self.notify(t("notify.update_available", version=self.update.version))
                     elif manual:
-                        self.notify(f"Установлена последняя версия {__version__}")
+                        self.notify(t("notify.up_to_date", version=__version__))
                 except updater.UpdateError as e:
                     log.warning("update check: %s", e)
                     if manual:
-                        self.notify(f"Проверка обновлений: {e}")
+                        self.notify(t("notify.update_check_failed", error=e))
             self._check_now.clear()
             self._check_now.wait(UPDATE_CHECK_INTERVAL_S)
 
@@ -324,7 +327,7 @@ class App:
             self._check_now.set()
             return
         if not updater.is_installed():
-            self.notify("Обновление работает только в установленной версии (install.cmd)")
+            self.notify(t("notify.update_only_installed"))
             return
         if self._updating:
             return
@@ -333,7 +336,7 @@ class App:
 
     def _do_update(self, rel: updater.Release) -> None:
         try:
-            self.notify(f"Скачиваю версию {rel.version}…")
+            self.notify(t("notify.downloading", version=rel.version))
             self.icon.icon = ICON_BUSY
             updater.download(rel, self.cfg.proxy)
             log.info("update: %s downloaded, applying", rel.version)
@@ -342,37 +345,37 @@ class App:
         except Exception as e:
             log.exception("update failed")
             self.icon.icon = ICON_ERROR
-            self.notify(f"Обновление не удалось: {e}")
+            self.notify(t("notify.update_failed", error=e))
             self._updating = False
 
     def _update_label(self, item) -> str:
         if self._updating:
-            return "Обновление…"
+            return t("menu.updating")
         if self.update:
-            return f"Обновить до {self.update.version}"
-        return f"Проверить обновления (версия {__version__})"
+            return t("menu.update_to", version=self.update.version)
+        return t("menu.check_updates", version=__version__)
 
     def _menu(self) -> pystray.Menu:
         def hk_label(item):
-            return (f"Исправить: {self.cfg.hotkey_fix} · с отправкой: {self.cfg.hotkey_fix_and_send}"
-                    f" · раскладка: {self.cfg.hotkey_layout}")
+            return t("menu.hotkeys", fix=self.cfg.hotkey_fix, send=self.cfg.hotkey_fix_and_send,
+                     layout=self.cfg.hotkey_layout)
 
         return pystray.Menu(
             pystray.MenuItem(hk_label, None, enabled=False),
-            pystray.MenuItem(lambda item: f"Модель: {self.corrector.last_model or self.cfg.models[0]}",
+            pystray.MenuItem(lambda item: t("menu.model", model=self.corrector.last_model or self.cfg.models[0]),
                              None, enabled=False),
-            pystray.MenuItem(lambda item: f"Стиль: {self.cfg.style.name}", pystray.Menu(self._style_items)),
+            pystray.MenuItem(lambda item: t("menu.style", style=self.cfg.style.name), pystray.Menu(self._style_items)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Исправлять раскладку по Enter", self._toggle_auto_enter,
+            pystray.MenuItem(lambda item: t("menu.auto_enter"), self._toggle_auto_enter,
                              checked=lambda item: self.cfg.auto_enter),
-            pystray.MenuItem("Запускать вместе с Windows", self._toggle_autostart,
+            pystray.MenuItem(lambda item: t("menu.autostart"), self._toggle_autostart,
                              checked=self._autostart_enabled),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Настройки…", lambda: self.open_settings(), default=True),
-            pystray.MenuItem("Открыть папку с данными", lambda: os.startfile(config_mod.DATA_DIR)),
+            pystray.MenuItem(lambda item: t("menu.settings"), lambda: self.open_settings(), default=True),
+            pystray.MenuItem(lambda item: t("menu.data_folder"), lambda: os.startfile(config_mod.DATA_DIR)),
             pystray.MenuItem(self._update_label, lambda: self._update_action()),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Выход", self.quit),
+            pystray.MenuItem(lambda item: t("menu.quit"), self.quit),
         )
 
     def quit(self) -> None:
@@ -389,10 +392,9 @@ class App:
         if "--updated" in sys.argv:
             # Give the tray a moment; if we crash before this, the apply script rolls back.
             threading.Timer(3, updater.mark_started).start()
-            threading.Timer(3.5, self.notify, args=(f"Обновлено до версии {__version__}",)).start()
+            threading.Timer(3.5, self.notify, args=(t("notify.updated", version=__version__),)).start()
         elif "--update-failed" in sys.argv:
-            threading.Timer(1.5, self.notify,
-                            args=("Обновление не установилось — работает прежняя версия. Подробности в update\\apply.log",)).start()
+            threading.Timer(1.5, self.notify, args=(t("notify.update_rolled_back"),)).start()
         log.info("started %s%s, %s, models=%s", __version__, " (autostart)" if "--autostart" in sys.argv else "",
                  sys.executable, ", ".join(self.cfg.models))
         self.icon.run()
@@ -416,6 +418,7 @@ def main() -> None:
         app = App()
         if not app.cfg.api_key:
             threading.Timer(1.0, app.open_settings).start()
+            threading.Timer(1.5, app.notify, args=(t("notify.ask_api_key"),)).start()
         app.run()
     except Exception:
         log.exception("fatal error")  # pythonw has no console, the log is the only trace
