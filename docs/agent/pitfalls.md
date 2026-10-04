@@ -18,4 +18,14 @@
   all `pythonw` processes.
 - **Venv `pythonw.exe` is a launcher**: it spawns the base interpreter, so there are two
   processes and Task Manager shows "Python". That's why the app ships as an exe.
+- **Spawning PowerShell from the windowed exe**: with `DETACHED_PROCESS` PowerShell
+  silently never starts (it needs a console). Use `CREATE_NO_WINDOW |
+  CREATE_NEW_PROCESS_GROUP` (+ `CREATE_BREAKAWAY_FROM_JOB` with fallback). v0.3.0 from
+  GitHub shipped with this bug: updating *from* that build quits the app without
+  swapping — reinstall with `install.cmd` if someone is stuck on it.
+- **Testing detached children from the agent shell**: the agent's command runner kills
+  child processes when the command ends, so "it didn't run" may be the harness. Test
+  survival by writing a marker file from the child and checking it after the parent exits.
+- **`shutil.rmtree` right after killing the exe** can leave the folder "delete pending";
+  `tools/build.py` retries before copying.
 - **Groq 403s** are usually network/region (VPN off), not the model — see `llm.md`.

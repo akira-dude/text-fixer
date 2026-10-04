@@ -184,11 +184,15 @@ def launch_apply() -> None:
     UPDATE_DIR.mkdir(parents=True, exist_ok=True)
     script = UPDATE_DIR / "apply.ps1"
     script.write_text(APPLY_SCRIPT, encoding="utf-8-sig")
-    subprocess.Popen(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
-         "-File", str(script), "-AppPid", str(os.getpid()), "-Data", str(DATA_DIR)],
-        cwd=DATA_DIR, creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
-    )
+    cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
+           "-File", str(script), "-AppPid", str(os.getpid()), "-Data", str(DATA_DIR)]
+    # Not DETACHED_PROCESS: PowerShell silently fails to start without a console.
+    flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    try:
+        # Leave our job object (if any) so the script survives this process exiting.
+        subprocess.Popen(cmd, cwd=DATA_DIR, creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB)
+    except OSError:
+        subprocess.Popen(cmd, cwd=DATA_DIR, creationflags=flags)
     log.info("update: apply script started")
 
 

@@ -62,8 +62,14 @@ def stop_running() -> None:
 def install(dist: Path) -> Path:
     config.ensure_config()  # migrate the old repo config.toml before the first exe start
     stop_running()
-    if APP_DIR.exists():
-        shutil.rmtree(APP_DIR)
+    # Windows may keep a just-killed exe's folder in "delete pending" for a moment.
+    for _ in range(20):
+        shutil.rmtree(APP_DIR, ignore_errors=True)
+        if not APP_DIR.exists():
+            break
+        time.sleep(0.5)
+    else:
+        raise SystemExit(f"Cannot remove {APP_DIR} — close programs using it and retry")
     shutil.copytree(dist, APP_DIR)
     exe = APP_DIR / "TextFixer.exe"
     subprocess.Popen([str(exe)], cwd=APP_DIR, creationflags=subprocess.DETACHED_PROCESS)
