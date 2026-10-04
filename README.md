@@ -8,7 +8,7 @@
 
 ## Установка
 
-`install.cmd` — создаст `.venv`, соберёт `TextFixer.exe` (PyInstaller) и установит его в `%LOCALAPPDATA%\TextFixerpp`, затем запустит. Повторный запуск `install.cmd` после правок кода пересобирает и переустанавливает программу (настройки сохраняются).
+`install.cmd` — создаст `.venv`, соберёт `TextFixer.exe` (PyInstaller) и установит его в `%LOCALAPPDATA%\TextFixer\app`, затем запустит. Повторный запуск `install.cmd` после правок кода пересобирает и переустанавливает программу (настройки сохраняются).
 
 Данные лежат вне репозитория, в `%LOCALAPPDATA%\TextFixer`: `config.toml` (настройки, в том числе API-ключ) и `textfixer.log`.
 
