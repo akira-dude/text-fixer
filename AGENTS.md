@@ -9,8 +9,8 @@ Read next: [`docs/agent/INDEX.md`](docs/agent/INDEX.md).
 
 ## Ground rules
 
-- **Language**: chat with the user in Russian. UI strings, notifications and the README
-  are Russian. Code, comments, agent docs (`AGENTS.md`, `docs/agent/**`) and commit
+- **Language**: chat with the user in Russian. UI strings and notifications are Russian.
+  README, code, comments, agent docs (`AGENTS.md`, `docs/agent/**`) and commit
   messages are English.
 - **Commits**: Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`…), English.
   This repo has no release branches: work directly on `main`, push to `origin main`.
