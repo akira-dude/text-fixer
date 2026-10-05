@@ -2,8 +2,10 @@
 
 import logging
 import re
+import socket
 import threading
 import time
+import urllib.request
 
 import httpx
 
@@ -56,34 +58,89 @@ class _ModelError(Exception):
         self.cooldown = cooldown
 
 
+def _network_fingerprint() -> tuple:
+    """Changes when a VPN is switched: the local address of the default route (TUN mode)
+    and the system proxy settings (proxy mode). Sends no packets."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("1.1.1.1", 443))
+            local = s.getsockname()[0]
+    except OSError:
+        local = ""
+    try:
+        proxies = tuple(sorted(urllib.request.getproxies().items()))
+    except Exception:
+        proxies = ()
+    return local, proxies
+
+
 class Corrector:
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        self.client = httpx.Client(
-            base_url=cfg.base_url,
-            headers={"Authorization": f"Bearer {cfg.api_key}"},
-            timeout=cfg.timeout_s,
-            limits=httpx.Limits(keepalive_expiry=600),
-            **http_proxy_kwargs(cfg.proxy),
-        )
+        self._lock = threading.Lock()  # one request at a time; guards client swaps
+        self._fingerprint = _network_fingerprint()
+        self.client = self._new_client()
         self._failed_until: dict[str, float] = {}
         self._no_reasoning: set[str] = set()  # models that rejected reasoning_effort
         self.last_model = ""
         self._stop = threading.Event()
         threading.Thread(target=self._keep_warm, name="llm-warm", daemon=True).start()
 
+    def _new_client(self) -> httpx.Client:
+        return httpx.Client(
+            base_url=self.cfg.base_url,
+            headers={"Authorization": f"Bearer {self.cfg.api_key}"},
+            timeout=self.cfg.timeout_s,
+            limits=httpx.Limits(keepalive_expiry=600),
+            **http_proxy_kwargs(self.cfg.proxy),
+        )
+
+    def _reconnect(self, reason: str) -> None:
+        """Drop pooled connections (they are tied to the old route/proxy) and re-read the proxy."""
+        log.info("reconnecting: %s", reason)
+        old, self.client = self.client, self._new_client()
+        self._fingerprint = _network_fingerprint()
+        old.close()
+
+    def _check_network(self) -> None:
+        if _network_fingerprint() != self._fingerprint:
+            self._reconnect("network changed")
+
     def _keep_warm(self) -> None:
         """Keep the TLS connection open so a fix doesn't pay for a handshake."""
         while not self._stop.is_set():
-            try:
-                self.client.get("/models")
-            except Exception:
-                pass
+            if self._lock.acquire(blocking=False):  # never delay a fix in progress
+                try:
+                    self._check_network()
+                    self.client.get("/models", timeout=3)
+                except Exception:
+                    pass
+                finally:
+                    self._lock.release()
             self._stop.wait(120)
 
     def close(self) -> None:
         self._stop.set()
-        self.client.close()
+        with self._lock:
+            self.client.close()
+
+    def _post(self, body: dict) -> httpx.Response:
+        """POST with one retry on a fresh connection: after a VPN switch the pooled
+        connection is dead and the first packets may briefly leave without the VPN."""
+        try:
+            r = self.client.post("/chat/completions", json=body)
+        except httpx.TimeoutException:
+            # Might be a slow model: don't wait twice, the next model gets a fresh connection.
+            self._reconnect("timeout")
+            raise
+        except httpx.TransportError as e:
+            self._reconnect(e.__class__.__name__)
+            return self.client.post("/chat/completions", json=body)
+        if r.status_code == 403 and "model" not in r.text.lower():
+            time.sleep(1)
+            self._reconnect("403")
+            return self.client.post("/chat/completions", json=body)
+        return r
 
     def _reasoning_effort(self, model: str) -> str:
         if model in self._no_reasoning:
@@ -115,10 +172,7 @@ class Corrector:
         if effort:
             body["reasoning_effort"] = effort
         try:
-            try:
-                r = self.client.post("/chat/completions", json=body)
-            except (httpx.RemoteProtocolError, httpx.ReadError):
-                r = self.client.post("/chat/completions", json=body)  # stale keep-alive connection
+            r = self._post(body)
         except httpx.ProxyError as e:
             raise LlmError(t("llm.proxy_down")) from e
         except httpx.TimeoutException as e:
@@ -152,6 +206,11 @@ class Corrector:
         core = text.strip()
         if not core:
             return text, 0.0
+        with self._lock:
+            self._check_network()
+            return self._correct(text, core, style)
+
+    def _correct(self, text: str, core: str, style: Style) -> tuple[str, float]:
         t0 = time.perf_counter()
         errors = []
         for model in self._candidates():
