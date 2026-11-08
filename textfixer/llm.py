@@ -105,6 +105,9 @@ class Corrector:
     def _check_network(self) -> None:
         if _network_fingerprint() != self._fingerprint:
             self._reconnect("network changed")
+            # Failures on the old network (timeouts while the VPN was off) say nothing
+            # about the models: don't keep the preferred model benched for 10 minutes.
+            self._failed_until.clear()
 
     def _keep_warm(self) -> None:
         """Keep the TLS connection open so a fix doesn't pay for a handshake."""
